@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rocket Spotter</title>
+  <style>
+    body {
+      margin: 0;
+    }
+    .launchesBox {
+      margin: 10px;
+      width: 180px;
+      position: absolute;
+      border-style: double;
+      z-index: 100;
+      background-image: linear-gradient(#a25cfd, #502fc4);
+      font-family: Arial;
+      font-weight: bold;
+      font-size: .7rem;
+      text-shadow: 1px 1px black;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center; /* Center the text horizontally */
+      word-wrap: break-word; /* Ensure text wraps */
+      overflow-wrap: break-word; /* Ensure text wraps */
+      padding: 10px; /* Add padding to create space around the text */
+    }
+  </style>
+  <script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.172/build/three.module.js",
+          "jsm/": "https://cdn.jsdelivr.net/npm/three@0.172/examples/jsm/"
+        }
+			}
+		</script>
+</head>
+
+<body>
+  <div style="width: 100%;">
+    <div id="launchesBox" class="launchesBox">
+      <h3>Launches</h3>
+      <div id="launches"></div>
+    </div>
+    <div style="width: 100%; height: 100vh; float: right; background: black;">
+      <canvas id="globeCanvas" style="width: 100%; height: 100%;"></canvas>
+    </div>
+  </div>
+  <script type="module" src="/static/js/index.js"></script>
+</body>
+
+</html> 

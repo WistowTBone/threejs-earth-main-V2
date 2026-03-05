@@ -70,16 +70,7 @@
       display: block;
     }
   </style>
-  <script type="importmap">
-			{
-				"imports": {
-					"three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.js",
-					"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.js",
-					"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.tsl.js",
-					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
-        }
-			}
-		</script>
+  <!-- Import map will be injected dynamically based on WebGPU support -->
 </head>
 
 <body>
@@ -93,10 +84,33 @@
   </div>
   <script>
     (function () {
-      const s = document.createElement('script');
-      s.type = 'module';
-      s.src = '/static/js/index.js';
-      document.body.appendChild(s);
+      var importMap = document.createElement('script');
+      importMap.type = 'importmap';
+      if (navigator.gpu) {
+        importMap.textContent = JSON.stringify({
+          imports: {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.js",
+            "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.js",
+            "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.tsl.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/",
+            "jsm/": "https://cdn.jsdelivr.net/npm/three@0.172/examples/jsm/"
+          }
+        });
+        var scriptSrc = '/static/js/index.js';
+      } else {
+        importMap.textContent = JSON.stringify({
+          imports: {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.172/build/three.module.js",
+            "jsm/": "https://cdn.jsdelivr.net/npm/three@0.172/examples/jsm/"
+          }
+        });
+        var scriptSrc = '/static/js/index_WebGL.js';
+      }
+      document.currentScript.after(importMap);
+      var script = document.createElement('script');
+      script.type = 'module';
+      script.src = scriptSrc;
+      importMap.after(script);
     })();
   </script>
 </body>

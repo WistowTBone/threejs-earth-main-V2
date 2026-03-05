@@ -1,7 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from 'jsm/controls/OrbitControls.js';
 import { getFresnelMat } from "../src/getFresnelMat.js";
-//
+import { GLTFLoader } from 'jsm/loaders/GLTFLoader.js';
+import getStarfield from "../src/getStarfield.js";
+
+
 // Fetch the JSON locations file
 let locations = [];
 fetch('static/src/locations.json')
@@ -17,6 +20,7 @@ fetch('static/src/locations.json')
     const canvasContainer = document.getElementById("globeCanvas");
     let w = canvasContainer.offsetWidth;
     let h = canvasContainer.offsetHeight;
+    let totalEarthRotation = 0;
     //Set up Scene/camera/renderer
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, w / h, 0.1, 1000);
@@ -45,29 +49,54 @@ fetch('static/src/locations.json')
 
     // Load Textures
     const material = new THREE.MeshPhongMaterial({
-      map: loader.load("static/textures/8k_earth_daymap.jpg"),
-      specularMap: loader.load("static/textures/8k_earth_specular_map.jpg"),
-      bumpMap: loader.load("static/textures/earth_bumpmap.jpg"),
-      bumpScale: 1,
+      map: loader.load("textures/planets/earth_day_4096.jpg"),
+      //specularMap: loader.load("static/textures/planets/earth_specular_4096.jpg"),
+      bumpMap: loader.load("textures/planets/earth_bump_roughness_clouds_4096.jpg"),
+      bumpScale: 2,
     });
     const earthMesh = new THREE.Mesh(geometry, material);
     earthGroup.add(earthMesh);
 
     // Night Lights on Earth
-    const lightsMat = new THREE.MeshBasicMaterial({
-      map: loader.load("static/textures/8k_earth_nightmap.jpg"),
-      blending: THREE.AdditiveBlending,
-    });
-    const lightsMesh = new THREE.Mesh(geometry, lightsMat);
-    earthGroup.add(lightsMesh);
+    //const lightsMat = new THREE.MeshBasicMaterial({
+    //  map: loader.load("static/textures/8k_earth_nightmap.jpg"),
+    //  blending: THREE.AdditiveBlending,
+    //});
+    //const lightsMesh = new THREE.Mesh(geometry, lightsMat);
+    //earthGroup.add(lightsMesh);
+
+    // Add Starfield
+    const starfield = getStarfield({ numStars: 20000 });
+    starfield.scale.set(3, 3, 3); // Scale the starfield to make it larger
+    scene.add(starfield);
+
 
     // Clouds just above earth
-    const cloudsMat = new THREE.MeshStandardMaterial({
-      map: loader.load("static/textures/8k_earth_clouds.jpg"),
+    // Use only the blue channel of the clouds texture for alpha
+    const cloudsTexture = loader.load("textures/planets/earth_bump_roughness_clouds_4096.jpg");
+    const cloudsMat = new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: cloudsTexture }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D map;
+        varying vec2 vUv;
+        void main() {
+          vec4 tex = texture2D(map, vUv);
+          // Use blue channel as alpha, white color for clouds
+          float cloudAlpha = tex.b * 0.3; // Reduce cloud cover by scaling alpha
+          gl_FragColor = vec4(1.0, 1.0, 1.0, cloudAlpha);
+        }
+      `,
       transparent: true,
-      opacity: 0.95,
       blending: THREE.AdditiveBlending,
-      alphaMap: loader.load('static/textures/8k_earth_clouds_alpha.jpg'),
     });
     const cloudsMesh = new THREE.Mesh(geometry, cloudsMat);
     cloudsMesh.scale.setScalar(1.003);
@@ -79,10 +108,27 @@ fetch('static/src/locations.json')
     glowMesh.scale.setScalar(1.01);
     earthGroup.add(glowMesh);
 
-    //Add sunlight
-    const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
-    sunLight.position.set(-20, 0.5, 1.5);
-    scene.add(sunLight);
+    // Add hemisphere light
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff,2);
+    scene.add(hemiLight);
+
+    // get ISS model
+    const gltfloader = new GLTFLoader();
+    let iss = null;
+    let isslatitude = 0;
+    let isslongitude = 0;
+    gltfloader.load('static/models/ISS_stationary.glb', async (gltf) => {
+      iss = gltf.scene;
+      iss.traverse((child) => {
+        if (child.isMesh) {
+          child.geometry.center();
+        }
+      });
+      iss.scale.set(0.02, 0.02, 0.02);
+      setISSPosition(iss);
+      await scene.add(iss);
+      setInterval(setISSPosition, 5000, iss);
+    });
 
     // Add locations to the earth
     const locationsMesh = [];
@@ -91,7 +137,7 @@ fetch('static/src/locations.json')
 
     for (let i = 0; i < locations.length; i++) {
       const coords = getCartesianCoords(locations[i].latitude, locations[i].longitude, 20);
-      // Calculate the normal vector to the surface of the sphere at the given point
+      // Calculate the normal vector to the surface of the sphere at the given point      
       const normal = new THREE.Vector3(coords.x, coords.y, coords.z).normalize();
 
       const cylinderGeometry = new THREE.CylinderGeometry(.05, .05, labelHeight, 32);
@@ -128,13 +174,8 @@ fetch('static/src/locations.json')
       for (let i = 0; i < labels.length; i++) {
         for (let j = i + 1; j < labels.length; j++) {
           const distance = labels[i].position.distanceTo(labels[j].position);
-          console.log(`Distance between Label ${i} and Label ${j} is ${distance}`);
           if (distance < labels[i].scale.y / 2) {
-            console.log(`Label ${i} is overlapping with Label ${j}`);
-            //console.log(`Label ${i} height is ${labels[i].scale.y}`);
-            //console.log(locations[i].name)
-            //console.log(locations[j].name)
-            // Move the labels
+            // Move the labels 
             const overlapAmount = labels[i].scale.y / 2;
             labels[i].position.add(new THREE.Vector3(0, 0, overlapAmount));
             labels[i].userData = { overlap: overlapAmount };
@@ -150,6 +191,7 @@ fetch('static/src/locations.json')
         }
       }
     }
+
     // Calculate the x,y,z coordinates of a point on a sphere
     function getCartesianCoords(lat, lon, radius) {
       const phi = (90 - lat) * Math.PI / 180;
@@ -163,7 +205,7 @@ fetch('static/src/locations.json')
     //function to create text label
     function textLabel(text, x, y, z, normal) {
       // Create the label
-      const labelTexture = new THREE.CanvasTexture(createLabelCanvas(text, 'rgba(255, 255, 0, 1.0)'));
+      const labelTexture = new THREE.CanvasTexture(createLabelCanvas(text, 'rgba(22, 255, 0, 1.0)'));
       const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture });
       const label = new THREE.Sprite(labelMaterial);
 
@@ -175,7 +217,6 @@ fetch('static/src/locations.json')
       label.position.add(normal.clone().multiplyScalar(labelHeight + .2));
       return label;
     }
-
 
     function createLabelCanvas(text, color) {
       const canvas = document.createElement('canvas');
@@ -196,7 +237,7 @@ fetch('static/src/locations.json')
           const testWidth = metrics.width;
           if (testWidth > maxWidth && n > 0) {
             const lineWidth = context.measureText(line).width;
-            context.fillText(line, (canvas.width - lineWidth) / 2, y); //centre text
+            context.fillText(line, (canvas.width - lineWidth) / 2, y); //centre text 
             line = words[n] + ' ';
             y += lineHeight;
           } else {
@@ -239,20 +280,57 @@ fetch('static/src/locations.json')
       }
     }
 
+    async function setISSPosition(iss) {
+      try {
+        const response = await fetch('https://api.wheretheiss.at/v1/satellites/25544');
+        const data = await response.json();
+        const lat = parseFloat(data.latitude);
+        const lon = parseFloat(data.longitude);
+        const coords = getCartesianCoords(lat, lon, 21.5);
+        isslatitude = lat;
+        isslongitude = lon + (totalEarthRotation * 180 / Math.PI);
+        iss.position.set(coords.x, coords.y, coords.z);
+        //console.log(coords);
+      } catch (error) {
+        console.error('Error loading JSON:', error);
+      }
+    }
+    // Update Label Positions
+    function updateISSPosition(rotationAmount) {
+      if (iss) {
+        isslongitude += rotationAmount * 180 / Math.PI;
+        const coords = getCartesianCoords(isslatitude, isslongitude, 21.5);
+        iss.position.set(coords.x, coords.y, coords.z);
+        //iss face origin
+        iss.lookAt(0, 0, 0);
+      } else {
+        console.log('ISS not loaded yet');
+      }
+    }
+
+
     // Animation Loop
     function animate() {
       requestAnimationFrame(animate);
       const rotationAmount = 0.0002;
 
+      // Update the total rotation amount
+      totalEarthRotation += rotationAmount;
+      if (totalEarthRotation > 2 * Math.PI) {
+        totalEarthRotation = 0;
+      }
+
       // Amimate locations and labels
       updateLabelPositions(rotationAmount);
-
+      updateISSPosition(rotationAmount);
+     
       // Rotate the earth, lights, clouds, and glow
       earthMesh.rotation.y += rotationAmount;
-      lightsMesh.rotation.y += rotationAmount;
+      //lightsMesh.rotation.y += rotationAmount;
       cloudsMesh.rotation.y += rotationAmount * 1.5;
       glowMesh.rotation.y += rotationAmount;
 
+      // Render the scene
       renderer.render(scene, camera);
     }
 
@@ -273,6 +351,11 @@ fetch('static/src/locations.json')
           const newTexture = createLabelCanvas(locations[i].name, 'rgba(255, 255, 0, 1.0)');
           labels[i].material.map = new THREE.CanvasTexture(newTexture);
           labels[i].material.needsUpdate = true;
+          // Set text label to the current location
+          let myDiv = document.getElementById("launches");
+          myDiv.innerHTML ="<p>" + locations[i].name + "</p>" + 
+            "<p># Launches: " + locations[i].count + "</p>" +
+            "<p>Next Launch: " + locations[i].next_launch + "</p>";
           { break; }
         } else {
           const newTexture = createLabelCanvas(locations[i].name, 'rgba(22, 255, 0, 1.0)');
@@ -301,12 +384,12 @@ fetch('static/src/locations.json')
           labels[i].material.needsUpdate = true;
 
           // Speak Name of Location
-          //const utterance = new SpeechSynthesisUtterance(locations[i].name);
-          //window.speechSynthesis.speak(utterance);
+          const utterance = new SpeechSynthesisUtterance(locations[i].name);
+          window.speechSynthesis.speak(utterance);
 
+          //Call Reporting for location
           let location_url = "https://www.rocketspotter.com/location?id=".concat(locations[i].id)
           window.open(location_url);
-
 
           { break; }
         } else {
